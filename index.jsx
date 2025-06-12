@@ -18,12 +18,15 @@ export default function App() {
   const [logs, setLogs] = useState([]);
   const [searchString, setSearchString] = useState('');
   const [replaceString, setReplaceString] = useState('');
+  const [filePath, setFilePath] = useState('levels.js');
+  const [imageDir, setImageDir] = useState('assets'); // New state for image directory
   
   // GitHub configuration
   const GITHUB_OWNER = "Shiro291";
   const GITHUB_REPO = "EneBoard";
-  const GITHUB_PATH = "assets/";
-  const JS_FILE_PATH = "levels.js";
+  
+  // State untuk tutorial
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const generateUniqueFilename = (originalName) => {
     const ext = originalName.split('.').pop();
@@ -32,7 +35,6 @@ export default function App() {
     return `${base}-${timestamp}.${ext}`;
   };
 
-  // Add log entry
   const addLog = (type, message) => {
     const newLog = {
       timestamp: new Date().toISOString(),
@@ -42,15 +44,14 @@ export default function App() {
     setLogs(prev => [newLog, ...prev]);
   };
 
-  // Fetch current levels.js file from GitHub
   const fetchJsFile = async () => {
     if (!githubToken) {
-      setError('Please enter your GitHub token first');
+      setError('Silakan masukkan token GitHub Anda terlebih dahulu');
       return;
     }
     
     try {
-      const response = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${JS_FILE_PATH}`,  {
+      const response = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filePath}`,  {
         headers: {
           Authorization: `token ${githubToken}`,
           Accept: "application/vnd.github.v3+json"
@@ -65,66 +66,71 @@ export default function App() {
       const data = await response.json();
       setFileSha(data.sha);
       
-      // Decode base64 content
-      const content = atob(data.content);
+      // Decode base64 content with proper UTF-8 handling
+      const decoder = new TextDecoder('utf-8');
+      const content = decoder.decode(atob(data.content));
       setFileContent(content);
-      
-      addLog('FETCH_SUCCESS', 'Successfully fetched levels.js file');
+      addLog('FETCH_SUCCESS', `Berhasil mengambil file ${filePath}`);
       setError('');
     } catch (error) {
       addLog('FETCH_ERROR', error.message);
-      setError(`Failed to fetch levels.js: ${error.message}`);
+      setError(`Gagal mengambil file: ${error.message}`);
     }
   };
 
-  // Replace code in file content
   const replaceCode = () => {
     if (!searchString.trim()) {
-      setError('Please enter search string to replace');
+      setError('Silakan masukkan string pencarian');
       return;
     }
 
-    if (!fileContent.includes(searchString)) {
-      setError('Search string not found in file content');
-      addLog('REPLACE_ERROR', 'Search string not found');
+    // Normalize whitespace for search
+    const normalizedSearch = searchString.replace(/\s+/g, ' ').trim();
+    const normalizedContent = fileContent.replace(/\s+/g, ' ').trim();
+
+    if (!normalizedContent.includes(normalizedSearch)) {
+      setError('String pencarian tidak ditemukan dalam konten file');
+      addLog('REPLACE_ERROR', 'String pencarian tidak ditemukan');
       return;
     }
 
     try {
-      const newContent = fileContent.replace(searchString, replaceString);
+      // Use regex with global flag for all occurrences
+      const regex = new RegExp(searchString, 'g');
+      const newContent = fileContent.replace(regex, replaceString);
       setFileContent(newContent);
-      addLog('REPLACE_SUCCESS', `Replaced "${searchString}" with "${replaceString}"`);
+      addLog('REPLACE_SUCCESS', `Berhasil mengganti "${searchString}" dengan "${replaceString}"`);
       setError('');
     } catch (error) {
       addLog('REPLACE_ERROR', error.message);
-      setError(`Replacement failed: ${error.message}`);
+      setError(`Gagal mengganti: ${error.message}`);
     }
   };
 
-  // Update levels.js on GitHub
   const updateJsFile = async () => {
     if (!githubToken) {
-      setError('Please enter your GitHub token first');
+      setError('Silakan masukkan token GitHub Anda terlebih dahulu');
       return;
     }
     
     if (!fileContent.trim()) {
-      setError('File content cannot be empty');
+      setError('Konten file tidak boleh kosong');
       return;
     }
 
     try {
-      // Convert content to base64
-      const encodedContent = btoa(unescape(encodeURIComponent(fileContent)));
+      // Encode with proper UTF-8 handling
+      const encoder = new TextEncoder();
+      const encodedContent = btoa(encoder.encode(fileContent));
 
-      const response = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${JS_FILE_PATH}`,  {
+      const response = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filePath}`,  {
         method: "PUT",
         headers: {
           Authorization: `token ${githubToken}`,
           Accept: "application/vnd.github.v3+json"
         },
         body: JSON.stringify({
-          message: "Update levels.js via web app",
+          message: "Update file via web app",
           content: encodedContent,
           sha: fileSha
         })
@@ -137,16 +143,14 @@ export default function App() {
 
       const data = await response.json();
       setFileSha(data.content.sha);
-      
-      addLog('UPDATE_SUCCESS', 'Successfully updated levels.js on GitHub');
+      addLog('UPDATE_SUCCESS', `Berhasil memperbarui ${filePath} di GitHub`);
       setError('');
     } catch (error) {
       addLog('UPDATE_ERROR', error.message);
-      setError(`Failed to update levels.js: ${error.message}`);
+      setError(`Gagal memperbarui file: ${error.message}`);
     }
   };
 
-  // Handle question image upload
   const handleQuestionImageUpload = (e) => {
     const files = Array.from(e.target.files);
     const newImages = files.map((file, index) => ({
@@ -159,14 +163,12 @@ export default function App() {
     setError('');
   };
 
-  // Handle option image change
   const handleOptionImageChange = (index, file) => {
     const newOptions = [...options];
     newOptions[index].image = file;
     setOptions(newOptions);
   };
 
-  // Toggle correct answer
   const toggleCorrectAnswer = (index) => {
     const newOptions = [...options];
     newOptions.forEach((option, i) => {
@@ -175,14 +177,12 @@ export default function App() {
     setOptions(newOptions);
   };
 
-  // Add new option
   const addOption = () => {
     if (options.length < 10) {
       setOptions([...options, { text: '', image: null, correct: false }]);
     }
   };
 
-  // Remove option
   const removeOption = (index) => {
     if (options.length > 2) {
       const newOptions = options.filter((_, i) => i !== index);
@@ -190,24 +190,22 @@ export default function App() {
     }
   };
 
-  // Generate template code
   const generateTemplate = () => {
     if (!question.trim()) {
-      setError('Please enter a question');
+      setError('Silakan masukkan pertanyaan');
       return;
     }
 
     if (options.filter(opt => opt.text.trim()).length < 2) {
-      setError('Please enter at least two options');
+      setError('Silakan masukkan minimal dua opsi');
       return;
     }
 
     if (!icon.trim()) {
-      setError('Please enter an icon');
+      setError('Silakan masukkan ikon');
       return;
     }
 
-    // Replace image placeholders with actual paths
     let processedQuestion = question;
     const imagePaths = [];
     
@@ -215,9 +213,9 @@ export default function App() {
       const uniqueFilename = generateUniqueFilename(img.file.name);
       processedQuestion = processedQuestion.replace(
         img.placeholder,
-        `${GITHUB_PATH}${uniqueFilename}`
+        `${imageDir}/${uniqueFilename}`
       );
-      imagePaths.push({ placeholder: img.placeholder, path: `${GITHUB_PATH}${uniqueFilename}` });
+      imagePaths.push({ placeholder: img.placeholder, path: `${imageDir}/${uniqueFilename}` });
     });
 
     let template = `type: 'quiz',\n`;
@@ -241,7 +239,7 @@ export default function App() {
         
         if (option.image) {
           const uniqueFilename = generateUniqueFilename(option.image.name);
-          template += `    imageUrl: '${GITHUB_PATH}${uniqueFilename}'\n`;
+          template += `    imageUrl: '${imageDir}/${uniqueFilename}'\n`;
         }
         
         template += `  }${index < options.length - 1 ? ',' : ''}\n`;
@@ -255,19 +253,16 @@ export default function App() {
     setError('');
   };
 
-  // Upload images to GitHub
   const uploadToGitHub = async (file, filename) => {
-    const path = `${GITHUB_PATH}${filename}`;
+    const path = `${imageDir}/${filename}`;
     
     try {
-      // Convert file to base64
       const reader = new FileReader();
       const fileAsBase64 = await new Promise((resolve) => {
         reader.onload = () => resolve(reader.result.split(',')[1]);
         reader.readAsDataURL(file);
       });
 
-      // Get current file SHA if exists
       let currentSha = null;
       try {
         const response = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,  {
@@ -285,7 +280,6 @@ export default function App() {
         console.error("Error checking file existence:", err);
       }
 
-      // Upload file to GitHub
       const response = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,  {
         method: "PUT",
         headers: {
@@ -293,7 +287,7 @@ export default function App() {
           Accept: "application/vnd.github.v3+json"
         },
         body: JSON.stringify({
-          message: "Upload image via web app",
+          message: "Upload gambar via web app",
           content: fileAsBase64,
           sha: currentSha
         })
@@ -311,24 +305,21 @@ export default function App() {
     }
   };
 
-  // Handle GitHub image upload
   const handleGitHubUpload = async () => {
     if (!githubToken) {
-      setError('Please enter your GitHub token first');
+      setError('Silakan masukkan token GitHub Anda terlebih dahulu');
       return;
     }
     
     setUploadStatus({ loading: true });
     
     try {
-      // Upload question images
       for (const img of questionImages) {
         const filename = generateUniqueFilename(img.file.name);
         const success = await uploadToGitHub(img.file, filename);
         setUploadStatus(prev => ({ ...prev, [`questionImage-${img.id}`]: success }));
       }
       
-      // Upload option images
       for (let i = 0; i < options.length; i++) {
         if (options[i].image) {
           const filename = generateUniqueFilename(options[i].image.name);
@@ -338,15 +329,14 @@ export default function App() {
       }
       
       setUploadStatus(prev => ({ ...prev, loading: false, complete: true }));
-      addLog('UPLOAD_SUCCESS', 'Successfully uploaded images to GitHub');
+      addLog('UPLOAD_SUCCESS', 'Berhasil mengunggah gambar ke GitHub');
     } catch (err) {
       addLog('UPLOAD_ERROR', err.message);
-      setError('Upload failed: ' + err.message);
+      setError('Gagal mengunggah: ' + err.message);
       setUploadStatus(prev => ({ ...prev, loading: false }));
     }
   };
 
-  // Copy to clipboard
   const copyToClipboard = () => {
     const textArea = document.createElement("textarea");
     textArea.value = output;
@@ -360,23 +350,20 @@ export default function App() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      setError('Failed to copy to clipboard. Please manually select the text.');
+      setError('Gagal menyalin ke clipboard. Silakan pilih teks secara manual.');
     }
     
     document.body.removeChild(textArea);
   };
 
-  // Handle question text change
   const handleQuestionChange = (e) => {
     setQuestion(e.target.value);
   };
 
-  // Handle icon change
   const handleIconChange = (e) => {
     setIcon(e.target.value);
   };
 
-  // Handle option text change
   const handleOptionTextChange = (index, value) => {
     const newOptions = [...options];
     newOptions[index].text = value;
@@ -386,9 +373,82 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto">
+        {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Quiz Template & GitHub Editor</h1>
-          <p className="text-lg text-gray-600">Create quizzes and edit GitHub files in one integrated tool</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Pembuat Template Kuis & Editor GitHub</h1>
+          <p className="text-lg text-gray-600">Buat kuis dan edit file GitHub dalam satu alat terintegrasi</p>
+        </div>
+
+        {/* Petunjuk Penggunaan */}
+        <div className="mb-6 bg-white rounded-xl shadow-xl p-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold text-gray-900">Cara Penggunaan</h2>
+            <button
+              onClick={() => setShowTutorial(!showTutorial)}
+              className="text-indigo-600 hover:text-indigo-800"
+            >
+              {showTutorial ? 'Sembunyikan' : 'Tampilkan'}
+            </button>
+          </div>
+          
+          {showTutorial && (
+            <div className="mt-4 space-y-4 text-sm text-gray-600">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h3 className="font-medium text-gray-800">Untuk Membuat Kuis:</h3>
+                  <ol className="list-decimal list-inside mt-2 space-y-1">
+                    <li>Masukkan token GitHub Anda (lihat bagian bawah untuk cara membuat token)</li>
+                    <li>Tentukan folder gambar menggunakan kolom "Direktori Gambar"</li>
+                    <li>Unggah gambar menggunakan tombol "Insert Image Placeholder"</li>
+                    <li>Tambahkan opsi jawaban dan tandai jawaban yang benar</li>
+                    <li>Klik "Generate Template" untuk membuat template kuis</li>
+                    <li>Klik "Upload to GitHub" untuk menyimpan gambar ke repositori</li>
+                  </ol>
+                </div>
+                
+                <div>
+                  <h3 className="font-medium text-gray-800">Untuk Mengedit File GitHub:</h3>
+                  <ol className="list-decimal list-inside mt-2 space-y-1">
+                    <li>Masukkan jalur file (misal: "levels.js" atau "src/data/questions.js")</li>
+                    <li>Klik "Fetch File" untuk mengambil konten file dari GitHub</li>
+                    <li>Edit konten file di area editor</li>
+                    <li>Gunakan fitur "Search & Replace" untuk mengganti kode</li>
+                    <li>Klik "Update File" untuk menyimpan perubahan ke GitHub</li>
+                  </ol>
+                </div>
+              </div>
+
+              {/* Panduan untuk guru */}
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h3 className="font-medium text-gray-800">Petunjuk untuk Guru:</h3>
+                <div className="mt-2 space-y-2">
+                  <p>1. Buat token GitHub: <a 
+                    href="https://github.com/settings/tokens"  
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 hover:text-indigo-800 underline"
+                  >Klik di sini</a></p>
+                  <p>2. Masukkan token di kolom "GitHub Token"</p>
+                  <p>3. Untuk membuat kuis:
+                    <ul className="list-disc list-inside ml-4">
+                      <li>Masukkan pertanyaan dan gambar</li>
+                      <li>Tambahkan opsi jawaban</li>
+                      <li>Klik "Generate Template"</li>
+                      <li>Klik "Upload to GitHub" untuk menyimpan gambar</li>
+                    </ul>
+                  </p>
+                  <p>4. Untuk mengedit file:
+                    <ul className="list-disc list-inside ml-4">
+                      <li>Masukkan jalur file (misal: "levels.js")</li>
+                      <li>Klik "Fetch File"</li>
+                      <li>Edit konten file di area editor</li>
+                      <li>Klik "Update File" untuk menyimpan perubahan</li>
+                    </ul>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Security Warning */}
@@ -396,13 +456,13 @@ export default function App() {
           <div className="flex">
             <div className="flex-shrink-0">
               <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 01-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 000-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M18 10a8 8 0 01-16 0 8 8 0 0116 0zm-7-4a1 1 0 00-2 0v6a1 1 0 002 0V6zm4 0a1 1 0 00-2 0v6a1 1 0 002 0V6z" clipRule="evenodd" />
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">Security Warning</h3>
+              <h3 className="text-sm font-medium text-red-800">Peringatan Keamanan</h3>
               <div className="mt-2 text-sm text-red-700">
-                <p>This token grants full access to your GitHub account. Never use this in a public website.</p>
+                <p>Token ini memberikan akses penuh ke akun GitHub Anda. JANGAN gunakan alat ini di website umum.</p>
               </div>
             </div>
           </div>
@@ -411,7 +471,7 @@ export default function App() {
         {/* GitHub Token Input */}
         <div className="mb-6">
           <label htmlFor="github-token" className="block text-sm font-medium text-gray-700 mb-2">
-            GitHub Personal Access Token
+            Token GitHub Pribadi
           </label>
           <input
             id="github-token"
@@ -422,14 +482,14 @@ export default function App() {
             className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
           />
           <p className="mt-2 text-sm text-gray-500">
-            Get your token from{' '}
+            Dapatkan token Anda dari{' '}
             <a 
               href="https://github.com/settings/tokens"  
               target="_blank" 
               rel="noopener noreferrer"
               className="text-indigo-600 hover:text-indigo-800 underline"
             >
-              GitHub Tokens Settings
+              Pengaturan Token GitHub
             </a>
           </p>
         </div>
@@ -438,13 +498,31 @@ export default function App() {
           {/* Quiz Template Generator Section */}
           <div className="bg-white rounded-xl shadow-xl overflow-hidden">
             <div className="p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Quiz Template Generator</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Pembuat Template Kuis</h2>
               
+              {/* Image Directory Input */}
+              <div className="mb-6">
+                <label htmlFor="image-dir" className="block text-sm font-medium text-gray-700 mb-2">
+                  Direktori Gambar (contoh: "assets")
+                </label>
+                <input
+                  id="image-dir"
+                  type="text"
+                  value={imageDir}
+                  onChange={(e) => setImageDir(e.target.value)}
+                  placeholder="assets"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                  Folder tempat menyimpan gambar di GitHub
+                </p>
+              </div>
+
               {/* Question Input with Images */}
               <div className="mb-6">
                 <div className="flex flex-wrap justify-between items-center mb-4">
                   <label htmlFor="question" className="block text-sm font-medium text-gray-700">
-                    Question (Use [image-1], [image-2], etc. to place images)
+                    Pertanyaan (Gunakan [image-1], [image-2], dll. untuk menempatkan gambar)
                   </label>
                   <button
                     type="button"
@@ -457,7 +535,7 @@ export default function App() {
                     <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                     </svg>
-                    Insert Image Placeholder
+                    Masukkan Placeholder Gambar
                   </button>
                 </div>
                 
@@ -466,7 +544,7 @@ export default function App() {
                   rows="5"
                   value={question}
                   onChange={handleQuestionChange}
-                  placeholder="Enter your question here. Use [image-1], [image-2], etc. to place images."
+                  placeholder="Masukkan pertanyaan di sini. Gunakan [image-1], [image-2], dll."
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 mb-4"
                 ></textarea>
 
@@ -482,7 +560,7 @@ export default function App() {
                   />
                 </div>
 
-                {/* Display Uploaded Images with Placeholders */}
+                {/* Display Uploaded Images */}
                 {questionImages.length > 0 && (
                   <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
                     {questionImages.map((img, index) => (
@@ -493,16 +571,16 @@ export default function App() {
                             type="button"
                             onClick={() => {
                               navigator.clipboard.writeText(img.placeholder);
-                              alert(`Copied ${img.placeholder} to clipboard!`);
+                              alert(`Berhasil menyalin ${img.placeholder} ke clipboard!`);
                             }}
                             className="text-indigo-600 hover:text-indigo-800 text-xs"
                           >
-                            Copy
+                            Salin
                           </button>
                         </div>
                         <img 
                           src={URL.createObjectURL(img.file)} 
-                          alt={`Question ${index + 1}`} 
+                          alt={`Pertanyaan ${index + 1}`} 
                           className="w-full h-auto rounded-md border border-gray-200"
                         />
                       </div>
@@ -514,14 +592,14 @@ export default function App() {
               {/* Icon Input */}
               <div className="mb-6">
                 <label htmlFor="icon" className="block text-sm font-medium text-gray-700 mb-2">
-                  Icon (Emoji or character)
+                  Ikon (Emoji atau karakter)
                 </label>
                 <input
                   id="icon"
                   type="text"
                   value={icon}
                   onChange={handleIconChange}
-                  placeholder="Enter an emoji or symbol"
+                  placeholder="Masukkan emoji atau simbol"
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
                 />
               </div>
@@ -529,7 +607,7 @@ export default function App() {
               {/* Options Section */}
               <div className="mb-6">
                 <div className="flex flex-wrap justify-between items-center mb-4">
-                  <h2 className="text-lg font-medium text-gray-900">Options</h2>
+                  <h2 className="text-lg font-medium text-gray-900">Opsi Jawaban</h2>
                   <button
                     type="button"
                     onClick={addOption}
@@ -538,7 +616,7 @@ export default function App() {
                     <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                     </svg>
-                    Add Option
+                    Tambah Opsi
                   </button>
                 </div>
 
@@ -553,7 +631,7 @@ export default function App() {
                           type="button"
                           onClick={() => removeOption(index)}
                           className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
-                          aria-label="Remove option"
+                          aria-label="Hapus opsi"
                         >
                           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -578,7 +656,7 @@ export default function App() {
                             type="text"
                             value={option.text}
                             onChange={(e) => handleOptionTextChange(index, e.target.value)}
-                            placeholder={`Option ${index + 1}`}
+                            placeholder={`Opsi ${index + 1}`}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 mb-2"
                           />
                           
@@ -612,7 +690,7 @@ export default function App() {
                     onClick={handleGitHubUpload}
                     disabled={uploadStatus.loading}
                     className={`inline-flex items-center px-4 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white ${
-                      uploadStatus.loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+                      uploadStatus.loading ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'
                     }`}
                   >
                     {uploadStatus.loading ? (
@@ -621,14 +699,14 @@ export default function App() {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        Uploading...
+                        Mengunggah...
                       </>
                     ) : (
                       <>
                         <svg className="h-5 w-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 3 3h10a3 3 0 3 3h6m-6-4l-4 4m0 0l-4-4m4 4V4"></path>
                         </svg>
-                        Upload to GitHub
+                        Upload ke GitHub
                       </>
                     )}
                   </button>
@@ -638,7 +716,7 @@ export default function App() {
               {/* Upload Status */}
               {uploadStatus.complete && (
                 <div className="mt-4 p-4 bg-green-50 border-l-4 border-green-500 text-green-700">
-                  <p className="text-sm">Image upload completed successfully!</p>
+                  <p className="text-sm">Upload gambar berhasil!</p>
                 </div>
               )}
             </div>
@@ -647,12 +725,26 @@ export default function App() {
           {/* Direct GitHub File Editing Section */}
           <div className="bg-white rounded-xl shadow-xl overflow-hidden">
             <div className="p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Direct GitHub File Editing</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Editor GitHub</h2>
               
               <div className="mb-6">
                 <p className="text-sm text-gray-600 mb-2">
-                  Edit <code className="bg-gray-100 px-1 rounded">levels.js</code> directly on GitHub
+                  Edit file apa saja di GitHub dengan memasukkan jalurnya
                 </p>
+                
+                <div className="mb-4">
+                  <label htmlFor="file-path" className="block text-sm font-medium text-gray-700 mb-1">
+                    Jalur File (contoh: "levels.js" atau "src/data/questions.js")
+                  </label>
+                  <input
+                    id="file-path"
+                    type="text"
+                    value={filePath}
+                    onChange={(e) => setFilePath(e.target.value)}
+                    placeholder="levels.js"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
                 
                 <div className="flex flex-wrap gap-4">
                   <button
@@ -663,7 +755,7 @@ export default function App() {
                       !githubToken ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'
                     }`}
                   >
-                    Fetch levels.js
+                    Ambil File
                   </button>
                   
                   <button
@@ -674,40 +766,49 @@ export default function App() {
                       !githubToken || !fileContent ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
                     }`}
                   >
-                    Update levels.js
+                    Perbarui File
                   </button>
                 </div>
               </div>
 
               {/* Code Replacement Section */}
               <div className="mb-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Code Replacement</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Penggantian Kode</h3>
+                
+                <div className="mb-4 text-sm text-gray-600">
+                  <p>⚠️ Pastikan format pencarian sesuai dengan file asli:</p>
+                  <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                    <li>Jangan tambahkan spasi/titik koma ekstra</li>
+                    <li>Kopikan langsung dari area editor di bawah</li>
+                    <li>Pastikan menggunakan petik dua (") bukan petik satu (')</li>
+                  </ul>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="search-string" className="block text-sm font-medium text-gray-700 mb-1">
-                      Search String
+                      Cari Kode
                     </label>
                     <input
                       id="search-string"
                       type="text"
                       value={searchString}
                       onChange={(e) => setSearchString(e.target.value)}
-                      placeholder="Exact string to find"
+                      placeholder="Masukkan kode yang ingin diganti"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </div>
                   
                   <div>
                     <label htmlFor="replace-string" className="block text-sm font-medium text-gray-700 mb-1">
-                      Replace With
+                      Ganti dengan
                     </label>
                     <input
                       id="replace-string"
                       type="text"
                       value={replaceString}
                       onChange={(e) => setReplaceString(e.target.value)}
-                      placeholder="New code to insert"
+                      placeholder="Masukkan kode baru"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
                     />
                   </div>
@@ -717,18 +818,18 @@ export default function App() {
                   type="button"
                   onClick={replaceCode}
                   disabled={!searchString || !fileContent}
-                  className={`mt-2 inline-flex items-center px-3 py-1 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+                  className={`inline-flex items-center px-3 py-1 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
                     !searchString || !fileContent ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
                   }`}
                 >
-                  Replace Code
+                  Ganti Kode
                 </button>
               </div>
 
               {/* Code Editor */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  levels.js Content
+                  Konten File
                 </label>
                 <textarea
                   rows="15"
@@ -740,16 +841,16 @@ export default function App() {
 
               {/* Logs Section */}
               <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Change Logs</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Log Perubahan</h3>
                 
                 <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
                   {logs.length === 0 ? (
-                    <p className="text-sm text-gray-500">No changes recorded yet</p>
+                    <p className="text-sm text-gray-500">Belum ada perubahan dicatat</p>
                   ) : (
                     <ul className="space-y-2">
                       {logs.map((log, index) => (
                         <li key={index} className="text-xs text-gray-600 border-b border-gray-100 pb-2">
-                          <span className="font-mono">{log.timestamp}</span> - 
+                          <span className="font-mono">{new Date(log.timestamp).toLocaleString()}</span> - 
                           <span className={`ml-2 px-2 py-0.5 rounded text-white text-xs ${
                             log.type.includes('ERROR') ? 'bg-red-500' : 'bg-green-500'
                           }`}>
@@ -768,53 +869,23 @@ export default function App() {
 
         {/* Output Section */}
         {output && (
-          <div className="mt-8 bg-white rounded-xl shadow-xl overflow-hidden">
-            <div className="p-6">
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4">
-                <h2 className="text-xl font-semibold text-gray-900 mb-3 sm:mb-0">Generated Template</h2>
-                <button
-                  type="button"
-                  onClick={copyToClipboard}
-                  className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm leading-4 font-medium text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  {copied ? (
-                    <>
-                      <svg className="h-4 w-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                      </svg>
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <svg className="h-4 w-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 00-2 2v1a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0 h2a2 2 0 012 2v3m2 4v11a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h12a2 2 0 012 2v4m-8 0h8"></path>
-                      </svg>
-                      Copy to Clipboard
-                    </>
-                  )}
-                </button>
-              </div>
-              <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
-                <pre className="whitespace-pre-wrap">
-                  <code>{output}</code>
-                </pre>
-              </div>
-              <div className="mt-4 text-sm text-gray-500">
-                <p>Images will be uploaded to: <code className="bg-gray-100 p-1 rounded">assets/</code> directory</p>
-                <p className="mt-1">
-                  Make sure your GitHub repository exists at: 
-                  <a 
-                    href="https://github.com/Shiro291/EneBoard"  
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-indigo-600 hover:text-indigo-800 underline ml-1"
-                  >
-                    github.com/Shiro291/EneBoard
-                  </a>
-                </p>
+                        <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Tips Format Emoji:</h3>
+                <div className="flex flex-wrap gap-2">
+                  {['💡', '⚡', '🔥', '💧', '☀️', '🔌', '🔋', '⚡'].map((emoji, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setIcon(emoji)}
+                      className="w-8 h-8 flex items-center justify-center text-xl"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         )}
 
         {/* Error Message */}
@@ -823,18 +894,17 @@ export default function App() {
             <div className="flex">
               <div className="flex-shrink-0">
                 <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 1 0-16 0 8 8 0 0016 0zM8 7a1 1 0 00-1 1v1a1 1 0 001 1h1a1 1 0 000-2H8zm0 3a1 1 0 000 2h1a1 1 0 000-2H8z" clipRule="evenodd" />
-                  <path d="M6 1 2 5.707A1 1 0 006.707 7h2.586A1 1 0 0010 6.293L6.364 2.636a1.707 1.707 0 00-2.414 0l-.707.707A1.707 1.707 0 001.757 5.07l14.142 14.142A2 2 0 0018.257 18l-2.12-.424a1 1 0 00-.771-.014L15 17.1l-.17-.075L14.45 17h-2.89l-.17.065-.03.013L9 16.293l-2.122 2.121-.707-.707 3.536-3.536A1 1 0 009 13.516l-.76-.134A1 1 0 007.46 13h-.92a1 1 0 00-1 1v.01a1 1 0 001 1h13a1 0 000-2h-.01zM3.857 7.293a.5.5 0 01-.921-.407l-.148-.324A1 1 0 012 5.383V4.5a1 1 0 011-1h14a1 1 0 011 1v.883a1 1 0 01-.253.739l-.96.96c-.445.445-1.02 1.268-2 2.288-.98-.98-1.694-2.071-2.294-2.731-.104-.12-.272-.24-.5-.24h-.04a.25.25 0 00-.196.068l-.041-.03a1 1 0 00-.704.26s-.083.052-.1.077l-.106.053c-.118.03-.283.09-.5.09-.158 0-.31-.034-.46-.092l-.11-.047-.052-.023-.094-.03a1 1 0 00-.25-.66c.02-.022.036-.05.048-.077l.04-.086.081-.189c.032-.078.062-.158.087-.238l.03-.118.02-.094.015-.088.01-.067.004-.051.017-.143.01-.11l.01-.127-.01-.088-.014-.127-.004-.051-.01-.067-.017-.143-.01-.094-.03-.189-.062-.267l-.04-.118a1 1 0 00-.192-.447c-.047-.09-.107-.17-.18-.232l-.09-.064-.113-.066-.116-.056-.11-.046-.19-.06-.267-.077-.052-.017-.105-.037-.158-.06a1 1 0 00-.149-.06 1 1 0 00-.094.022 1 1 0 00-.094-.022 1 1 0 00-.158.06 1 1 0 00-.19.06c-.077.02-1.113.448-1.113 1.07z"></path>
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-red-700">{error}</p>
-                  </div>
-                </div>
-              )}
+                  <path fillRule="evenodd" d="M18 10a8 8 0 01-8 8H8a8 8 0 01-8-8 8 8 0 018-8z"></path>
+                  <path fillRule="evenodd" d="M8 7a1 1 0 011 1v4a1 1 0 01-2 0V8a1 1 0 011-1z"></path>
+                  <path fillRule="evenodd" d="M8 10a1 1 0 011 1v4a1 1 0 01-2 0v-4a1 1 0 011-1z"></path>
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
